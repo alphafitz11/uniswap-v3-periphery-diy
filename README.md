@@ -7,6 +7,10 @@ This repository contains the periphery smart contracts for the Uniswap V3 Protoc
 For the lower level core contracts, see the [uniswap-v3-core](https://github.com/Uniswap/uniswap-v3-core)
 repository.
 
+## Code analysis
+
+The code analysis of this project in Chinese is in [here](./codeanalysis_zh.md). White papers and official website are recommended for you to better learn this project.
+
 ## Bug bounty
 
 This repository is subject to the Uniswap V3 bug bounty program,
