@@ -18,7 +18,7 @@ import './PeripheryImmutableState.sol';
 abstract contract LiquidityManagement is IUniswapV3MintCallback, PeripheryImmutableState, PeripheryPayments {
     struct MintCallbackData {
         PoolAddress.PoolKey poolKey;
-        address payer;
+        address payer;  // 支付 token 的地址
     }
 
     /// @inheritdoc IUniswapV3MintCallback
@@ -30,23 +30,26 @@ abstract contract LiquidityManagement is IUniswapV3MintCallback, PeripheryImmuta
         MintCallbackData memory decoded = abi.decode(data, (MintCallbackData));
         CallbackValidation.verifyCallback(factory, decoded.poolKey);
 
+        // 根据传入的参数，使用transferFrom代用户向Pool中支付token
         if (amount0Owed > 0) pay(decoded.poolKey.token0, decoded.payer, msg.sender, amount0Owed);
         if (amount1Owed > 0) pay(decoded.poolKey.token1, decoded.payer, msg.sender, amount1Owed);
     }
 
     struct AddLiquidityParams {
-        address token0;
-        address token1;
-        uint24 fee;
-        address recipient;
-        int24 tickLower;
-        int24 tickUpper;
-        uint256 amount0Desired;
-        uint256 amount1Desired;
-        uint256 amount0Min;
-        uint256 amount1Min;
+        address token0;          // token0的地址
+        address token1;          // token1的地址
+        uint24 fee;              // 流动性的交易费率
+        address recipient;       // 流动性的所有者人地址
+        int24 tickLower;         // 代表流动性价格下限的tick(以token0计价)
+        int24 tickUpper;         // 代表流动性价格上限的tick(以token0计价)
+        uint256 amount0Desired;  // 期望获取的token0数量
+        uint256 amount1Desired;  // 期望获取的token1数量
+        uint256 amount0Min;      // 需要提供的token0下限值
+        uint256 amount1Min;      // 需要提供的token1下限值
     }
 
+    /// 向一个初始化的池中添加流动性
+    /// 在NonfungiblePositionManager合约的mint函数和increaseLiquidity函数中调用
     /// @notice Add liquidity to an initialized pool
     function addLiquidity(AddLiquidityParams memory params)
         internal
@@ -60,6 +63,7 @@ abstract contract LiquidityManagement is IUniswapV3MintCallback, PeripheryImmuta
         PoolAddress.PoolKey memory poolKey =
             PoolAddress.PoolKey({token0: params.token0, token1: params.token1, fee: params.fee});
 
+        // 不需要访问factory合约，可以通过token0,token1和fee三个参数计算出pool合约的地址
         pool = IUniswapV3Pool(PoolAddress.computeAddress(factory, poolKey));
 
         // compute the liquidity amount
@@ -82,6 +86,8 @@ abstract contract LiquidityManagement is IUniswapV3MintCallback, PeripheryImmuta
             params.tickLower,
             params.tickUpper,
             liquidity,
+            // pool合约回调所使用的参数，用于完成进行流动性token的支付操作
+            // 使用回调函数可以将Position的owner和实际流动性token支付者解耦，从而让中间合约来管理用户的流动性，将流动性代币化
             abi.encode(MintCallbackData({poolKey: poolKey, payer: msg.sender}))
         );
 

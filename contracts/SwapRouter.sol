@@ -83,6 +83,14 @@ contract SwapRouter is
         }
     }
 
+    /// SwapRouter 中封装了面向用户的交易接口
+    /// - exactInput: 指定交易对路径，付出的token0数和预期得到的最小token1数(token0和token1可互换)
+    /// - exactOutput: 指定交易对路径，付出的token0最大数和预期得到的token1数(token0和token1可以互换)
+
+    /// exactInputSingle和exactInput会调用exactInputInternal，分别对应单个币对和多个币对的代币交换
+    /// exactInputInternal会调用pool.swap()函数完成单个币对之间的交换
+    /// Uniswap前端会帮用户实时计算出最优路径(交换的收益最高)，并作为参数传给合约调用
+
     /// @dev Performs a single exact input swap
     function exactInputInternal(
         uint256 amountIn,
@@ -111,6 +119,7 @@ contract SwapRouter is
         return uint256(-(zeroForOne ? amount1 : amount0));
     }
 
+    /// 单次调用exactInputInternal函数，在单个币对之间转换
     /// @inheritdoc ISwapRouter
     function exactInputSingle(ExactInputSingleParams calldata params)
         external
@@ -128,6 +137,7 @@ contract SwapRouter is
         require(amountOut >= params.amountOutMinimum, 'Too little received');
     }
 
+    /// 循环调用exactInputInternal函数，在多个币对之间转换
     /// @inheritdoc ISwapRouter
     function exactInput(ExactInputParams memory params)
         external
@@ -138,20 +148,25 @@ contract SwapRouter is
     {
         address payer = msg.sender; // msg.sender pays for the first hop
 
+        // 循环遍历传入的路径，进行交换
         while (true) {
             bool hasMultiplePools = params.path.hasMultiplePools();
 
+            // 完成当前路径的交互
             // the outputs of prior swaps become the inputs to subsequent ones
             params.amountIn = exactInputInternal(
                 params.amountIn,
+                // 如果是中间交换，由合约代为收取和支付中间代币
                 hasMultiplePools ? address(this) : params.recipient, // for intermediate swaps, this contract custodies
                 0,
+                // 传给回调函数的参数
                 SwapCallbackData({
                     path: params.path.getFirstPool(), // only the first pool in the path is necessary
                     payer: payer
                 })
             );
 
+            // 如果路径全部遍历完成，则退出循环，交易完成
             // decide whether to continue or terminate
             if (hasMultiplePools) {
                 payer = address(this); // at this point, the caller has paid
@@ -162,6 +177,7 @@ contract SwapRouter is
             }
         }
 
+        // 检查交易是否满足预期
         require(amountOut >= params.amountOutMinimum, 'Too little received');
     }
 

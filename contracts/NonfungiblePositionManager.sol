@@ -124,6 +124,7 @@ contract NonfungiblePositionManager is
         }
     }
 
+    /// 铸造流动性代币：添加流动性，获取ERC721代币，并更新代币对应的position数据
     /// @inheritdoc INonfungiblePositionManager
     function mint(MintParams calldata params)
         external
@@ -138,6 +139,7 @@ contract NonfungiblePositionManager is
         )
     {
         IUniswapV3Pool pool;
+        // 调用pool合约添加流动性，并完成token0和token1的发送
         (liquidity, amount0, amount1, pool) = addLiquidity(
             AddLiquidityParams({
                 token0: params.token0,
@@ -153,6 +155,7 @@ contract NonfungiblePositionManager is
             })
         );
 
+        // 铸造ERC721代币给用户，用来代表用户所持有的流动性
         _mint(params.recipient, (tokenId = _nextId++));
 
         bytes32 positionKey = PositionKey.compute(address(this), params.tickLower, params.tickUpper);
@@ -165,6 +168,7 @@ contract NonfungiblePositionManager is
                 PoolAddress.PoolKey({token0: params.token0, token1: params.token1, fee: params.fee})
             );
 
+        // 用ERC721的 token ID 作为键，将用户提供流动性的元信息保存起来
         _positions[tokenId] = Position({
             nonce: 0,
             operator: address(0),
@@ -194,6 +198,7 @@ contract NonfungiblePositionManager is
     // save bytecode by removing implementation of unused method
     function baseURI() public pure override returns (string memory) {}
 
+    /// 增加流动性：添加流动性，更新position手续费，并更新代币对应的position数据
     /// @inheritdoc INonfungiblePositionManager
     function increaseLiquidity(IncreaseLiquidityParams calldata params)
         external
@@ -231,6 +236,7 @@ contract NonfungiblePositionManager is
         // this is now updated to the current transaction
         (, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, , ) = pool.positions(positionKey);
 
+        // 更新token0和token1累积的手续费
         position.tokensOwed0 += uint128(
             FullMath.mulDiv(
                 feeGrowthInside0LastX128 - position.feeGrowthInside0LastX128,
@@ -253,6 +259,7 @@ contract NonfungiblePositionManager is
         emit IncreaseLiquidity(params.tokenId, liquidity, amount0, amount1);
     }
 
+    /// 减少流动性：调用pool合约的burn函数减少流动性，并更新费用
     /// @inheritdoc INonfungiblePositionManager
     function decreaseLiquidity(DecreaseLiquidityParams calldata params)
         external
@@ -305,6 +312,7 @@ contract NonfungiblePositionManager is
         emit DecreaseLiquidity(params.tokenId, params.liquidity, amount0, amount1);
     }
 
+    /// 提取手续费
     /// @inheritdoc INonfungiblePositionManager
     function collect(CollectParams calldata params)
         external
@@ -317,6 +325,7 @@ contract NonfungiblePositionManager is
         // allow collecting to the nft position manager address with address 0
         address recipient = params.recipient == address(0) ? address(this) : params.recipient;
 
+        // 查询position信息
         Position storage position = _positions[params.tokenId];
 
         PoolAddress.PoolKey memory poolKey = _poolIdToPoolKey[position.poolId];
@@ -325,8 +334,11 @@ contract NonfungiblePositionManager is
 
         (uint128 tokensOwed0, uint128 tokensOwed1) = (position.tokensOwed0, position.tokensOwed1);
 
+        // 再更新一次手续费累积总额
         // trigger an update of the position fees owed and fee growth snapshots if it has any liquidity
         if (position.liquidity > 0) {
+            // 使用pool.burn()触发手续费的更新，pool.burn()函数用于减小position对应的流动性
+            // 这里调用该函数传入的流动性值为0，表示只是用于触发手续费总额的更新，并没有进行流动性的更新
             pool.burn(position.tickLower, position.tickUpper, 0);
             (, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, , ) =
                 pool.positions(PositionKey.compute(address(this), position.tickLower, position.tickUpper));
@@ -350,6 +362,7 @@ contract NonfungiblePositionManager is
             position.feeGrowthInside1LastX128 = feeGrowthInside1LastX128;
         }
 
+        // 提取手续费的最大值，不能超过手续费总额
         // compute the arguments to give to the pool#collect method
         (uint128 amount0Collect, uint128 amount1Collect) =
             (
@@ -357,6 +370,7 @@ contract NonfungiblePositionManager is
                 params.amount1Max > tokensOwed1 ? tokensOwed1 : params.amount1Max
             );
 
+        // 调用 pool.collect 将手续费发送给 recipient
         // the actual amounts collected are returned
         (amount0, amount1) = pool.collect(
             recipient,
